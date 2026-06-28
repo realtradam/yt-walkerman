@@ -1,0 +1,25 @@
+{
+	"name": "yt-music-dl-backend",
+	"private": true,
+	"type": "module",
+	"workspaces": [
+		"packages/*"
+	],
+	"scripts": {
+		"check": "biome check .",
+		"check:fix": "biome check --write .",
+		"test": "vitest run",
+		"test:bun": "bun test packages/storage-sqlite/src",
+		"test:all": "bun run test && bun run test:bun",
+		"test:watch": "vitest",
+		"typecheck": "tsc -b --pretty",
+		"dev": "bun --watch packages/host-bin/src/main.ts",
+		"dev:all": "../bin/up"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.15",
+		"@types/bun": "^1.3.14",
+		"typescript": "^5.7.0",
+		"vitest": "^3.0.0"
+	}
+}

@@ -1,0 +1,17 @@
+{
+	"files": [],
+	"references": [
+		{ "path": "./packages/contract" },
+		{ "path": "./packages/job-store" },
+		{ "path": "./packages/downloader" },
+		{ "path": "./packages/storage-sqlite" },
+		{ "path": "./packages/tagger" },
+		{ "path": "./packages/library" },
+		{ "path": "./packages/cut-plan" },
+		{ "path": "./packages/sponsorblock" },
+		{ "path": "./packages/cutter" },
+		{ "path": "./packages/path-template" },
+		{ "path": "./packages/musicbrainz" },
+		{ "path": "./packages/host-bin" }
+	]
+}

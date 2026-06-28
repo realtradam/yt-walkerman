@@ -1,0 +1,13 @@
+{
+	"name": "@yt-music/library",
+	"version": "0.0.0",
+	"type": "module",
+	"private": true,
+	"main": "src/index.ts",
+	"types": "src/index.ts",
+	"dependencies": {
+		"@yt-music/contract": "workspace:*",
+		"@yt-music/tagger": "workspace:*",
+		"@yt-music/path-template": "workspace:*"
+	}
+}

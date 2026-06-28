@@ -1,0 +1,25 @@
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# Local credentials — never commit.
+.env
+
+# Agent prompts and work reports — local only.
+prompts/
+reports/
+
+# OS / editor noise
+.DS_Store
+*.log
+
+# Local runtime DB
+.data/
+
+# Downloaded media output (large, user-specific)
+output/
+
+# yt-dlp binary fetched by bin/install-yt-dlp
+bin/yt-dlp
+bin/yt-dlp.exe

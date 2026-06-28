@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+dist/
+build/
+*.tsbuildinfo
+
+# Environment
+.env
+
+# Agent operational artifacts (ephemeral, not project knowledge)
+prompts/
+reports/
+
+# OS / editor noise
+.DS_Store
+*.log
+*.swp
+
+# Local runtime data
+.data/
+
+# Downloaded media output (large, user-specific)
+output/
+
+# yt-dlp binary fetched by bin/install-yt-dlp
+bin/yt-dlp
+bin/yt-dlp.exe
+
+# Worktrees (per-feature)
+worktrees/

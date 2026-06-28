@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# bin/up — bring up the whole yt-music-dl stack from the workspace ROOT.
+# Ctrl-C stops everything cleanly. Mirrors ../dispatch/bin/up.
+#
+# The FRONTEND is the single user-facing entry point (plain HTTP), reachable
+# over Tailscale at http://arch-razer:24304 (or http://localhost:24304). It
+# proxies /api, /ws, /health to the backend — one origin, no CORS.
+#
+#   backend  (yt-music-dl-backend)  bun --watch  → http://127.0.0.1:24303  (localhost only)
+#   frontend (yt-music-dl-web)      vite         → http://0.0.0.0:24304    (HMR, Tailscale)
+#
+# Run:  bin/up
+
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # <root>/bin
+ROOT="$(cd "$HERE/.." && pwd)"                          # workspace root
+BACKEND="$ROOT/yt-music-dl-backend"
+FRONTEND="$ROOT/yt-music-dl-web"
+
+if [ ! -d "$BACKEND" ]; then
+	echo "up: backend repo not found at $BACKEND" >&2
+	exit 1
+fi
+
+cleanup() {
+	echo
+	echo "[up] stopping backend${HAVE_FRONTEND:+ + frontend}…"
+	[ -n "${BACK_PG:-}" ]  && kill -TERM "-$BACK_PG"  2>/dev/null
+	[ -n "${FRONT_PG:-}" ] && kill -TERM "-$FRONT_PG" 2>/dev/null
+	sleep 1
+	[ -n "${BACK_PG:-}" ]  && kill -KILL "-$BACK_PG"  2>/dev/null
+	[ -n "${FRONT_PG:-}" ] && kill -KILL "-$FRONT_PG" 2>/dev/null
+	echo "[up] stopped."
+	return 0
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+
+HAVE_FRONTEND=""
+[ -d "$FRONTEND" ] && HAVE_FRONTEND="1"
+
+echo "[up] backend  → http://127.0.0.1:24303   [bun --watch — localhost only]"
+if [ -n "$HAVE_FRONTEND" ]; then
+	echo "[up] frontend → http://localhost:24304    [vite HMR]"
+	echo "[up]            http://arch-razer:24304      [over Tailscale]"
+else
+	echo "[up] frontend → (skipped — $FRONTEND not found)"
+fi
+echo "[up] Ctrl-C to stop."
+echo
+
+# Backend: localhost only (the Vite proxy is the only public entry point).
+setsid bash -c "cd '$BACKEND' && exec bun --watch packages/host-bin/src/main.ts" \
+	> >(sed -u 's/^/[backend]  /') 2>&1 &
+BACK_PG=$!
+
+if [ -n "$HAVE_FRONTEND" ]; then
+	setsid bash -c "cd '$FRONTEND' && exec bun run dev" \
+		> >(sed -u 's/^/[frontend] /') 2>&1 &
+	FRONT_PG=$!
+fi
+
+wait

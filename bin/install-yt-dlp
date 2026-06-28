@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# bin/install-yt-dlp — fetch the standalone yt-dlp binary into the backend's
+# bin/ directory. No Python required at runtime — this downloads the
+# self-contained executable from GitHub releases.
+#
+# The backend's downloader package spawns this binary (or "yt-dlp" on PATH).
+# Prefer `sudo pacman -S yt-dlp` if you want system package management; this
+# script is the self-contained alternative.
+#
+# Run:  bin/install-yt-dlp
+
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"          # <root>/bin
+ROOT="$(cd "$HERE/.." && pwd)"                                 # workspace root
+DEST="$ROOT/yt-music-dl-backend/bin"
+mkdir -p "$DEST"
+
+# Resolve the latest release tag + URL for the standalone binary.
+API="https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"
+echo "[install-yt-dlp] resolving latest release…"
+ASSET_URL="$(curl -fsSL "$API" \
+	| grep -oE '"browser_download_url":\s*"[^"]*yt-dlp_linux"' \
+	| head -1 \
+	| sed -E 's/.*"([^"]+)"/\1/')"
+
+if [ -z "$ASSET_URL" ]; then
+	# Fall back to the generic unix binary (older naming) if the linux asset isn't found.
+	ASSET_URL="$(curl -fsSL "$API" \
+		| grep -oE '"browser_download_url":\s*"[^"]*yt-dlp"' \
+		| head -1 \
+		| sed -E 's/.*"([^"]+)"/\1/')"
+fi
+
+if [ -z "$ASSET_URL" ]; then
+	echo "install-yt-dlp: could not find a standalone binary in the latest release." >&2
+	echo "Install via your package manager instead:  sudo pacman -S yt-dlp" >&2
+	exit 1
+fi
+
+echo "[install-yt-dlp] downloading: $ASSET_URL"
+curl -fsSL "$ASSET_URL" -o "$DEST/yt-dlp"
+chmod +x "$DEST/yt-dlp"
+echo "[install-yt-dlp] installed → $DEST/yt-dlp"
+"$DEST/yt-dlp" --version
+echo
+echo "[install-yt-dlp] set YTMDL_YTDLP_PATH=$DEST/yt-dlp in your .env if yt-dlp is not on PATH."

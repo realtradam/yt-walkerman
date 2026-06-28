@@ -1,0 +1,19 @@
+{
+	"name": "@yt-music/host-bin",
+	"version": "0.0.0",
+	"type": "module",
+	"private": true,
+	"dependencies": {
+		"@yt-music/contract": "workspace:*",
+		"@yt-music/job-store": "workspace:*",
+		"@yt-music/downloader": "workspace:*",
+		"@yt-music/storage-sqlite": "workspace:*",
+		"@yt-music/tagger": "workspace:*",
+		"@yt-music/library": "workspace:*",
+		"@yt-music/cut-plan": "workspace:*",
+		"@yt-music/sponsorblock": "workspace:*",
+		"@yt-music/cutter": "workspace:*",
+		"@yt-music/path-template": "workspace:*",
+		"@yt-music/musicbrainz": "workspace:*"
+	}
+}

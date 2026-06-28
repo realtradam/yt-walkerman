@@ -1,0 +1,22 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"rootDir": "src",
+		"outDir": "dist",
+		"composite": true
+	},
+	"include": ["src/**/*.ts"],
+	"references": [
+		{ "path": "../contract" },
+		{ "path": "../job-store" },
+		{ "path": "../downloader" },
+		{ "path": "../storage-sqlite" },
+		{ "path": "../tagger" },
+		{ "path": "../library" },
+		{ "path": "../cut-plan" },
+		{ "path": "../sponsorblock" },
+		{ "path": "../cutter" },
+		{ "path": "../path-template" },
+		{ "path": "../musicbrainz" }
+	]
+}
