@@ -42,7 +42,7 @@ export interface MetadataApi {
 export function createMetadataApi(baseUrl = "/api/metadata"): MetadataApi {
 	return {
 		async search(req: MetadataSearchRequest): Promise<MetadataResult[]> {
-			const res = await fetch(baseUrl, {
+			const res = await fetch(`${baseUrl}/search`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json", accept: "application/json" },
 				body: JSON.stringify(req),
