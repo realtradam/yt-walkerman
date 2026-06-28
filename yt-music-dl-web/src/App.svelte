@@ -232,7 +232,7 @@
 				</div>
 			{/if}
 		{:else if view === "library"}
-			<LibraryView api={libraryApi} />
+			<LibraryView api={libraryApi} metadataApi={metadataApi} />
 		{:else if view === "settings"}
 			<SettingsView api={settingsApi} />
 		{/if}

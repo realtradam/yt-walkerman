@@ -1,14 +1,43 @@
 /**
- * src/features/library/logic.ts — PURE: library view-model + rename reducers.
+ * src/features/library/logic.ts — PURE: library view-model + rename reducers
+ * + MusicBrainz metadata search helpers.
  *
  * No DOM, no fetch, no WebSocket — pure (input → output). Unit-tested with
  * zero mocks (dispatch "pure core" principle). The Svelte component is a thin
  * wrapper over this: it fetches the raw `Track[]` (via the injected adapter),
  * derives a display model here, and builds rename PATCH bodies via
  * `toUpdateRequest` (only changed fields) / applies them optimistically via
- * `updateTrack`.
+ * `updateTrack`. The MusicBrainz sidebar + match-album helpers
+ * (buildTrackSearch, trackSidebarItems, toUpdateRequestFromItem, tracksToDraft,
+ * albumMatchToUpdates) mirror the segment editor's metadata.ts but operate on
+ * a Track and produce UpdateTrackRequest bodies; the shared search state
+ * machine + SidebarItem view-model are re-exported from metadata.ts.
  */
-import type { Track, UpdateTrackRequest } from "@yt-music/contract";
+import type {
+	AlbumArtRef,
+	AlbumMatchResult,
+	CutDraft,
+	MetadataResult,
+	MetadataSearchRequest,
+	ReleaseDetail,
+	Track,
+	UpdateTrackRequest,
+} from "@yt-music/contract";
+import type { SidebarItem } from "../segment-editor/metadata.js";
+import { toSidebarItem } from "../segment-editor/metadata.js";
+
+// Re-export the shared search state machine + sidebar view-model from the
+// segment editor's pure metadata module, so the library's sidebar + match-album
+// components import everything from one place (./logic.js). No runtime circular
+// dependency: metadata.ts's only import from logic.ts is `import type`, erased.
+export type { SearchEvent, SearchState, SidebarItem } from "../segment-editor/metadata.js";
+export {
+	buildReleaseSearch,
+	initialSearchState,
+	matchedSegmentCount,
+	reduceSearch,
+	toSidebarItem,
+} from "../segment-editor/metadata.js";
 
 /**
  * One row in the library browse view. Derived from a `Track` (GLOSSARY: a
@@ -145,4 +174,154 @@ export function updateTrack(track: Track, fields: UpdateTrackRequest): Track {
 		...(fields.album !== undefined ? { album: fields.album } : {}),
 		...(fields.track !== undefined ? { track: fields.track } : {}),
 	};
+}
+
+// ─── MusicBrainz metadata search (pure) ──────────────────────────────────────
+//
+// These mirror the segment editor's metadata.ts helpers (buildRecordingSearch,
+// youtubeItem, sidebarItems, fillActions, albumMatchActions) but operate on a
+// library Track (not a SegmentDraft) and produce UpdateTrackRequest bodies
+// (not EditAction[]). The shared search state machine (SearchState, reduceSearch,
+// initialSearchState) + the SidebarItem view-model + toSidebarItem are reused
+// directly from ../segment-editor/metadata.js — no duplication. (No runtime
+// circular dependency: metadata.ts's only import from logic.ts is
+// `import type { EditAction }`, erased at runtime.)
+
+/**
+ * Build the recording-search request for a track's metadata sidebar. `query`
+ * is the search-box text (falling back to the track's title when blank);
+ * `artist` is the track's artist, omitted when blank. Mirrors
+ * buildRecordingSearch but for a library Track (no global-artist fallback —
+ * each track owns its own artist). Pure: (track, query) → request.
+ */
+export function buildTrackSearch(track: Track, query: string): MetadataSearchRequest {
+	const q = query.trim() || track.title.trim();
+	const artist = track.artist.trim();
+	// exactOptionalPropertyTypes: omit `artist` rather than set undefined.
+	return artist ? { query: q, artist, type: "recording" } : { query: q, type: "recording" };
+}
+
+/**
+ * The "Current tags" sidebar entry: the track's existing metadata. Mirrors the
+ * segment editor's youtubeItem (the "Generated from YouTube" entry) but for a
+ * library Track. Uses source: "youtube" so the sidebar treats it as the
+ * non-fillable current entry (toUpdateRequestFromItem returns an empty body
+ * for it); the library sidebar component renders it with a "Current" badge.
+ * Pure: (track) → item.
+ */
+export function trackToCurrentItem(track: Track): SidebarItem {
+	const item: SidebarItem = {
+		source: "youtube",
+		title: track.title,
+		artist: track.artist,
+		album: track.album,
+	};
+	if (track.track !== undefined) item.trackNumber = track.track;
+	return item;
+}
+
+/**
+ * The full sidebar list for a track: the "Current tags" entry first, then the
+ * MB recording-search results in the backend's relevance order. Mirrors
+ * sidebarItems from metadata.ts. Pure: (track, results) → items.
+ */
+export function trackSidebarItems(track: Track, results: MetadataResult[]): SidebarItem[] {
+	return [trackToCurrentItem(track), ...results.map(toSidebarItem)];
+}
+
+/**
+ * Build a PATCH /api/library/:id body (UpdateTrackRequest) from a clicked
+ * sidebar item. The "Current tags" entry (source: "youtube") produces an empty
+ * body (no-op); an MB result sets title + artist always, album + track only
+ * when the result actually carries them. Mirrors fillActions from metadata.ts
+ * but produces an UpdateTrackRequest (a PATCH body) instead of EditAction[]
+ * (in-memory draft edits). Pure: (item) → request.
+ */
+export function toUpdateRequestFromItem(item: SidebarItem): UpdateTrackRequest {
+	if (item.source === "youtube") return {}; // no-op — current tags
+	const req: UpdateTrackRequest = {
+		title: item.title,
+		artist: item.artist,
+	};
+	if (item.album !== undefined) req.album = item.album;
+	if (item.trackNumber !== undefined) req.track = item.trackNumber;
+	return req;
+}
+
+// ─── Match Album (pure) ──────────────────────────────────────────────────────
+
+/**
+ * Convert library tracks to a CutDraft so the backend's match-album endpoint
+ * (which expects a CutDraft) can match them against a release's track list.
+ * Each track becomes a minimal SegmentDraft — only the fields the matcher uses
+ * (title, artist, album, trackNumber) carry real data; albumArt/start/end/
+ * removedSegments are dummies (the matcher ignores them). The segment id is
+ * set to the track id, and the array order is preserved so matchResult
+ * segmentIndex references align with the tracks array. Pure: (tracks) → draft.
+ */
+export function tracksToDraft(tracks: Track[]): CutDraft {
+	const dummyArt: AlbumArtRef = { kind: "video-thumbnail" };
+	return {
+		sourceVideoId: "",
+		sourceDuration: 0,
+		globalAlbum: "",
+		globalArtist: "",
+		globalAlbumArt: dummyArt,
+		segments: tracks.map((t) => ({
+			id: t.id,
+			title: t.title,
+			artist: t.artist,
+			album: t.album,
+			// SegmentDraft.trackNumber is a required number; Track.track is
+			// optional. Default to 0 (the matcher uses segmentIndex for
+			// position matching, not trackNumber).
+			trackNumber: t.track ?? 0,
+			albumArt: dummyArt,
+			start: 0,
+			end: t.duration,
+			removedSegments: [],
+		})),
+	};
+}
+
+/**
+ * Per-track update produced by an album match: the track's id + the PATCH body
+ * to apply. Used by the LibraryMatchAlbumDialog's onapply callback.
+ */
+export interface TrackUpdate {
+	id: string;
+	request: UpdateTrackRequest;
+}
+
+/**
+ * Convert an album match result to per-track UpdateTrackRequests. For every
+ * match whose `confidence` is "position" or "title", build a PATCH body
+ * setting title = track.title, artist = release.artist, album = release.title,
+ * track = track.position. "none"-confidence matches are skipped (those tracks
+ * are left as-is). Matches reference tracks by `segmentIndex`, which aligns
+ * with the tracks array (tracksToDraft preserves order). Mirrors
+ * albumMatchActions from metadata.ts but produces TrackUpdate[] instead of
+ * EditAction[]. Pure: (tracks, release, matchResult) → updates.
+ */
+export function albumMatchToUpdates(
+	tracks: Track[],
+	release: ReleaseDetail,
+	matchResult: AlbumMatchResult,
+): TrackUpdate[] {
+	const updates: TrackUpdate[] = [];
+	for (const match of matchResult.matches) {
+		if (match.confidence === "none") continue;
+		const track = tracks[match.segmentIndex];
+		if (!track) continue; // index out of range → skip defensively
+		updates.push({
+			id: track.id,
+			request: {
+				title: match.track.title,
+				artist: release.artist,
+				album: release.title,
+				track: match.track.position,
+			},
+		});
+	}
+	return updates;
 }

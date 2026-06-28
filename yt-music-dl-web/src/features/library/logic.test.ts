@@ -1,6 +1,16 @@
-import type { Track } from "@yt-music/contract";
+import type {
+	AlbumMatch,
+	AlbumMatchResult,
+	CutDraft,
+	MetadataResult,
+	ReleaseDetail,
+	ReleaseTrack,
+	Track,
+} from "@yt-music/contract";
 import { describe, expect, it } from "vitest";
 import {
+	albumMatchToUpdates,
+	buildTrackSearch,
 	EMPTY_ROWS,
 	formatDuration,
 	hasTrackInputError,
@@ -9,7 +19,11 @@ import {
 	toTrackEditForm,
 	toTrackRow,
 	toUpdateRequest,
+	toUpdateRequestFromItem,
 	trackNumberLabel,
+	trackSidebarItems,
+	tracksToDraft,
+	trackToCurrentItem,
 	updateTrack,
 } from "./logic.js";
 
@@ -252,6 +266,278 @@ describe("library logic (pure)", () => {
 			const next = updateTrack(base, {});
 			expect(next).toEqual(base);
 			expect(next).not.toBe(base);
+		});
+	});
+
+	// ─── MusicBrainz metadata search helpers (pure) ────────────────────────────
+
+	describe("buildTrackSearch", () => {
+		it("uses the query when non-blank, track artist as the hint", () => {
+			const t: Track = { ...base, artist: "Track Artist" };
+			const req = buildTrackSearch(t, "user query");
+			expect(req).toEqual({ query: "user query", artist: "Track Artist", type: "recording" });
+		});
+
+		it("falls back to the track title when the query is blank", () => {
+			const t: Track = { ...base, title: "Track Title", artist: "Track Artist" };
+			const req = buildTrackSearch(t, "   ");
+			expect(req.query).toBe("Track Title");
+			expect(req.artist).toBe("Track Artist");
+			expect(req.type).toBe("recording");
+		});
+
+		it("omits artist when the track has no artist", () => {
+			const t: Track = { ...base, artist: "" };
+			const req = buildTrackSearch(t, "free text");
+			expect(req.query).toBe("free text");
+			expect(req.artist).toBeUndefined();
+		});
+
+		it("omits artist when both query fallback and artist are blank", () => {
+			const t: Track = { ...base, title: "", artist: "" };
+			const req = buildTrackSearch(t, "");
+			expect(req.query).toBe("");
+			expect(req.artist).toBeUndefined();
+		});
+	});
+
+	describe("trackToCurrentItem", () => {
+		it("maps a track with all fields to a sidebar item", () => {
+			const t: Track = { ...base, track: 5 };
+			const item = trackToCurrentItem(t);
+			expect(item).toEqual({
+				source: "youtube",
+				title: "Song",
+				artist: "Artist",
+				album: "Album",
+				trackNumber: 5,
+			});
+		});
+
+		it("omits trackNumber when the track has none", () => {
+			const item = trackToCurrentItem(base);
+			expect(item.trackNumber).toBeUndefined();
+			expect(item.album).toBe("Album");
+		});
+	});
+
+	describe("trackSidebarItems", () => {
+		it("puts the current-tags entry first, then MB results in order", () => {
+			const t: Track = { ...base, track: 3 };
+			const r1: MetadataResult = {
+				id: "m1",
+				type: "recording",
+				title: "MB One",
+				artist: "A",
+				score: 80,
+			};
+			const r2: MetadataResult = {
+				id: "m2",
+				type: "recording",
+				title: "MB Two",
+				artist: "B",
+				score: 70,
+			};
+			const items = trackSidebarItems(t, [r1, r2]);
+			expect(items).toHaveLength(3);
+			expect(items[0]?.source).toBe("youtube");
+			expect(items[0]?.title).toBe("Song");
+			expect(items[0]?.trackNumber).toBe(3);
+			expect(items[1]?.title).toBe("MB One");
+			expect(items[2]?.title).toBe("MB Two");
+		});
+
+		it("has the current entry even with no MB results", () => {
+			const items = trackSidebarItems(base, []);
+			expect(items).toHaveLength(1);
+			expect(items[0]?.source).toBe("youtube");
+		});
+	});
+
+	describe("toUpdateRequestFromItem", () => {
+		it("returns an empty body for the current-tags entry (no-op)", () => {
+			const item = trackToCurrentItem(base);
+			expect(toUpdateRequestFromItem(item)).toEqual({});
+		});
+
+		it("sets title + artist always, album + track when present", () => {
+			const r: MetadataResult = {
+				id: "m1",
+				type: "recording",
+				title: "MB Title",
+				artist: "MB Artist",
+				album: "MB Album",
+				trackNumber: 9,
+				score: 88,
+			};
+			const items = trackSidebarItems(base, [r]);
+			const mbItem = items[1];
+			if (!mbItem) throw new Error("expected an MB item");
+			const req = toUpdateRequestFromItem(mbItem);
+			expect(req).toEqual({
+				title: "MB Title",
+				artist: "MB Artist",
+				album: "MB Album",
+				track: 9,
+			});
+		});
+
+		it("omits album when the result has no album", () => {
+			const r: MetadataResult = {
+				id: "m1",
+				type: "recording",
+				title: "T",
+				artist: "A",
+				score: 70,
+			};
+			const items = trackSidebarItems(base, [r]);
+			const mbItem = items[1];
+			if (!mbItem) throw new Error("expected an MB item");
+			const req = toUpdateRequestFromItem(mbItem);
+			expect(req).toEqual({ title: "T", artist: "A" });
+			expect("album" in req).toBe(false);
+		});
+
+		it("omits track when the result has no trackNumber", () => {
+			const r: MetadataResult = {
+				id: "m1",
+				type: "recording",
+				title: "T",
+				artist: "A",
+				album: "Al",
+				score: 70,
+			};
+			const items = trackSidebarItems(base, [r]);
+			const mbItem = items[1];
+			if (!mbItem) throw new Error("expected an MB item");
+			const req = toUpdateRequestFromItem(mbItem);
+			expect(req).toEqual({ title: "T", artist: "A", album: "Al" });
+			expect("track" in req).toBe(false);
+		});
+	});
+
+	// ─── Match Album helpers (pure) ────────────────────────────────────────────
+
+	describe("tracksToDraft", () => {
+		it("converts each track to a segment, preserving order and id", () => {
+			const tracks: Track[] = [
+				{ ...base, id: "t1", title: "A", artist: "X", album: "L", track: 1, duration: 100 },
+				{ ...base, id: "t2", title: "B", artist: "Y", album: "M", track: 2, duration: 200 },
+			];
+			const draft: CutDraft = tracksToDraft(tracks);
+			expect(draft.segments).toHaveLength(2);
+			expect(draft.segments[0]?.id).toBe("t1");
+			expect(draft.segments[0]?.title).toBe("A");
+			expect(draft.segments[0]?.artist).toBe("X");
+			expect(draft.segments[0]?.album).toBe("L");
+			expect(draft.segments[0]?.trackNumber).toBe(1);
+			expect(draft.segments[0]?.end).toBe(100);
+			expect(draft.segments[1]?.id).toBe("t2");
+			expect(draft.segments[1]?.trackNumber).toBe(2);
+		});
+
+		it("defaults trackNumber to 0 when the track has none", () => {
+			const draft = tracksToDraft([base]);
+			expect(draft.segments[0]?.trackNumber).toBe(0);
+		});
+
+		it("returns an empty draft for no tracks", () => {
+			const draft = tracksToDraft([]);
+			expect(draft.segments).toEqual([]);
+		});
+	});
+
+	describe("albumMatchToUpdates", () => {
+		function relTrack(position: number, title: string): ReleaseTrack {
+			return { position, title, recordingId: `rec-${position}` };
+		}
+		function rel(id: string, title: string, artist: string, tracks: ReleaseTrack[]): ReleaseDetail {
+			return { id, title, artist, tracks };
+		}
+		function match(
+			segmentIndex: number,
+			t: ReleaseTrack,
+			confidence: AlbumMatch["confidence"],
+		): AlbumMatch {
+			return { segmentIndex, track: t, confidence };
+		}
+
+		it("fills every position/title match; skips none", () => {
+			const tracks: Track[] = [
+				{ ...base, id: "t1", title: "A", duration: 100 },
+				{ ...base, id: "t2", title: "B", duration: 200 },
+			];
+			const release = rel("rel1", "Album Title", "Album Artist", [
+				relTrack(1, "Track One"),
+				relTrack(2, "Track Two"),
+			]);
+			const result: AlbumMatchResult = {
+				matches: [
+					match(0, relTrack(1, "Track One"), "position"),
+					match(1, relTrack(2, "Track Two"), "position"),
+				],
+			};
+			const updates = albumMatchToUpdates(tracks, release, result);
+			expect(updates).toHaveLength(2);
+			expect(updates[0]).toEqual({
+				id: "t1",
+				request: {
+					title: "Track One",
+					artist: "Album Artist",
+					album: "Album Title",
+					track: 1,
+				},
+			});
+			expect(updates[1]).toEqual({
+				id: "t2",
+				request: {
+					title: "Track Two",
+					artist: "Album Artist",
+					album: "Album Title",
+					track: 2,
+				},
+			});
+		});
+
+		it("skips none-confidence matches", () => {
+			const tracks: Track[] = [
+				{ ...base, id: "t1", title: "A", duration: 100 },
+				{ ...base, id: "t2", title: "B", duration: 200 },
+			];
+			const release = rel("rel1", "Album", "Artist", [relTrack(1, "One"), relTrack(2, "Two")]);
+			const result: AlbumMatchResult = {
+				matches: [match(0, relTrack(1, "One"), "title"), match(1, relTrack(2, "Two"), "none")],
+			};
+			const updates = albumMatchToUpdates(tracks, release, result);
+			expect(updates).toHaveLength(1);
+			expect(updates[0]?.id).toBe("t1");
+		});
+
+		it("skips matches whose segmentIndex is out of range", () => {
+			const tracks: Track[] = [{ ...base, id: "t1", title: "A", duration: 100 }];
+			const release = rel("rel1", "Album", "Artist", [relTrack(1, "A")]);
+			const result: AlbumMatchResult = {
+				matches: [match(5, relTrack(1, "A"), "position")],
+			};
+			expect(albumMatchToUpdates(tracks, release, result)).toEqual([]);
+		});
+
+		it("returns no updates for an empty match list", () => {
+			const tracks: Track[] = [{ ...base, id: "t1", title: "A", duration: 100 }];
+			const release = rel("rel1", "Album", "Artist", []);
+			expect(albumMatchToUpdates(tracks, release, { matches: [] })).toEqual([]);
+		});
+
+		it("uses release.title + release.artist for album + artist fields", () => {
+			const tracks: Track[] = [{ ...base, id: "t1", title: "A", duration: 100 }];
+			const release = rel("rel1", "The Album", "The Artist", [relTrack(3, "Track")]);
+			const result: AlbumMatchResult = {
+				matches: [match(0, relTrack(3, "Track"), "position")],
+			};
+			const updates = albumMatchToUpdates(tracks, release, result);
+			expect(updates[0]?.request.album).toBe("The Album");
+			expect(updates[0]?.request.artist).toBe("The Artist");
+			expect(updates[0]?.request.track).toBe(3);
 		});
 	});
 });
