@@ -272,32 +272,36 @@ describe("library logic (pure)", () => {
 	// ─── MusicBrainz metadata search helpers (pure) ────────────────────────────
 
 	describe("buildTrackSearch", () => {
-		it("uses the query when non-blank, track artist as the hint", () => {
+		it("uses the query when non-blank, with no artist hint", () => {
 			const t: Track = { ...base, artist: "Track Artist" };
 			const req = buildTrackSearch(t, "user query");
-			expect(req).toEqual({ query: "user query", artist: "Track Artist", type: "recording" });
+			expect(req).toEqual({ query: "user query", type: "recording" });
 		});
 
 		it("falls back to the track title when the query is blank", () => {
 			const t: Track = { ...base, title: "Track Title", artist: "Track Artist" };
 			const req = buildTrackSearch(t, "   ");
-			expect(req.query).toBe("Track Title");
-			expect(req.artist).toBe("Track Artist");
-			expect(req.type).toBe("recording");
+			expect(req).toEqual({ query: "Track Title", type: "recording" });
 		});
 
-		it("omits artist when the track has no artist", () => {
-			const t: Track = { ...base, artist: "" };
-			const req = buildTrackSearch(t, "free text");
-			expect(req.query).toBe("free text");
-			expect(req.artist).toBeUndefined();
-		});
-
-		it("omits artist when both query fallback and artist are blank", () => {
-			const t: Track = { ...base, title: "", artist: "" };
+		it("sends no artist hint even when the track has a channel-name artist", () => {
+			// Library tracks' `artist` is the YouTube channel name; used as an
+			// artist hint it yields zero MusicBrainz results — so it is never sent.
+			const t: Track = {
+				...base,
+				title: "sweet moratorium",
+				artist: "おかもとえみ Official YouTube Channel",
+			};
 			const req = buildTrackSearch(t, "");
-			expect(req.query).toBe("");
-			expect(req.artist).toBeUndefined();
+			expect(req).toEqual({ query: "sweet moratorium", type: "recording" });
+			expect("artist" in req).toBe(false);
+		});
+
+		it("returns an empty query when both query and title are blank", () => {
+			const t: Track = { ...base, title: "", artist: "Track Artist" };
+			const req = buildTrackSearch(t, "");
+			expect(req).toEqual({ query: "", type: "recording" });
+			expect("artist" in req).toBe(false);
 		});
 	});
 

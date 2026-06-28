@@ -42,11 +42,13 @@
 
 	let { tracks, api, onapply, onclose }: Props = $props();
 
-	// Inputs prefilled from the first track's artist + album (reset each open
-	// via parent {#if}). svelte-ignore state_referenced_locally — intentional:
-	// capture the initial value to prefill the search box.
-	// svelte-ignore state_referenced_locally
-	let artistInput = $state(tracks[0]?.artist ?? "");
+	// The album search box is prefilled from the first track's album (reset each
+	// open via parent {#if}). The artist box starts EMPTY on purpose: a library
+	// track's `artist` is the YouTube channel name, which MusicBrainz has no
+	// artist by, so prefilling it sent `artist:"<channel>"` queries that
+	// returned zero results. The box stays as an optional manual filter — type a
+	// real artist to narrow the release search.
+	let artistInput = $state("");
 	// svelte-ignore state_referenced_locally
 	let albumInput = $state(tracks[0]?.album ?? "");
 

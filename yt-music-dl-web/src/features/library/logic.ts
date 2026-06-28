@@ -189,16 +189,17 @@ export function updateTrack(track: Track, fields: UpdateTrackRequest): Track {
 
 /**
  * Build the recording-search request for a track's metadata sidebar. `query`
- * is the search-box text (falling back to the track's title when blank);
- * `artist` is the track's artist, omitted when blank. Mirrors
- * buildRecordingSearch but for a library Track (no global-artist fallback —
- * each track owns its own artist). Pure: (track, query) → request.
+ * is the search-box text (falling back to the track's title when blank).
+ *
+ * The track's `artist` is NEVER sent as a hint: for a downloaded YouTube track
+ * it is the channel name (e.g. "おかもとえみ Official YouTube Channel"), which
+ * MusicBrainz has no artist by, so a Lucene `artist:"<channel>"` clause
+ * returns zero results. The search is title-only; the user can refine the query
+ * manually in the sidebar if needed. Pure: (track, query) → request.
  */
 export function buildTrackSearch(track: Track, query: string): MetadataSearchRequest {
 	const q = query.trim() || track.title.trim();
-	const artist = track.artist.trim();
-	// exactOptionalPropertyTypes: omit `artist` rather than set undefined.
-	return artist ? { query: q, artist, type: "recording" } : { query: q, type: "recording" };
+	return { query: q, type: "recording" };
 }
 
 /**
