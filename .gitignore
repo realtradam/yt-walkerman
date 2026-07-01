@@ -30,3 +30,4 @@ bin/yt-dlp.exe
 
 # Worktrees (per-feature)
 worktrees/
+.dispatch/

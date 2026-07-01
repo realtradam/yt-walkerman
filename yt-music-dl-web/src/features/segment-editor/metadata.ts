@@ -74,39 +74,49 @@ export function reduceSearch(state: SearchState, event: SearchEvent): SearchStat
 
 /**
  * Build the recording-search request for a segment's sidebar. `query` is the
- * search-box text (falling back to the segment title when blank); `artist` is
- * the segment's artist (falling back to the draft's global artist), omitted when
- * neither is set. Mirrors the backend's `MetadataSearchRequest`.
+ * search-box text (falling back to the segment title when blank). The search is
+ * title-only — no artist hint is sent. For YouTube downloads the segment/global
+ * artist is the channel name (e.g. 'Official YouTube Channel'), which MusicBrainz
+ * has no artist for, so a Lucene `artist:"…" AND recording:"…"` query returns
+ * zero results. Mirrors the backend's `MetadataSearchRequest`.
  *
- * Pure: (segment, query, globalArtist) → request.
+ * `globalArtist` is retained in the signature for backward compatibility (the
+ * caller still passes it) but is now unused. Pure: (segment, query, globalArtist) → request.
  */
 export function buildRecordingSearch(
 	segment: SegmentDraft,
 	query: string,
-	globalArtist: string,
+	// Prefixed `_` to satisfy Biome's noUnusedFunctionParameters: retained in the
+	// signature for backward compatibility (the caller still passes it) but the
+	// artist hint is no longer sent — see the doc comment above.
+	_globalArtist: string,
 ): MetadataSearchRequest {
 	const q = query.trim() || segment.title.trim();
-	const artist = segment.artist.trim() || globalArtist.trim();
-	// exactOptionalPropertyTypes: omit `artist` rather than set undefined.
-	return artist ? { query: q, artist, type: "recording" } : { query: q, type: "recording" };
+	return { query: q, type: "recording" };
 }
 
 /**
  * Build the release-search request for the "Match Album" dialog. `album` is the
- * album-name search text (falling back to the global album); `artist` is the
- * artist search text (falling back to the global artist), omitted when blank.
+ * album-name search text (falling back to the global album). The search is
+ * album-only — no artist hint is sent. For YouTube downloads the draft's global
+ * artist is the channel name, and the dialog prefills its artist box with it, so
+ * sending it as a Lucene `artist:"…"` hint yields zero MB release results.
+ *
+ * `artist` and `globalArtist` are retained in the signature for backward
+ * compatibility (the caller still passes them) but are now unused.
  * Pure: (album, artist, globalAlbum, globalArtist) → request.
  */
 export function buildReleaseSearch(
 	album: string,
-	artist: string,
+	// Prefixed `_` to satisfy Biome's noUnusedFunctionParameters: retained in the
+	// signature for backward compatibility (the caller still passes them) but the
+	// artist hint is no longer sent — see the doc comment above.
+	_artist: string,
 	globalAlbum: string,
-	globalArtist: string,
+	_globalArtist: string,
 ): MetadataSearchRequest {
 	const q = album.trim() || globalAlbum.trim();
-	const a = artist.trim() || globalArtist.trim();
-	// exactOptionalPropertyTypes: omit `artist` rather than set undefined.
-	return a ? { query: q, artist: a, type: "release" } : { query: q, type: "release" };
+	return { query: q, type: "release" };
 }
 
 // ─── Sidebar view-model (pure) ───────────────────────────────────────────────

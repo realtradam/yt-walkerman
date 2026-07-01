@@ -165,25 +165,23 @@ describe("metadata search state machine (pure)", () => {
 // ─── request builders ────────────────────────────────────────────────────────
 
 describe("buildRecordingSearch (pure)", () => {
-	it("uses the query when non-blank, segment artist as the hint", () => {
+	it("uses the query when non-blank; sends a title-only request (no artist hint)", () => {
 		const s = seg("s1", "Chapter Title", "Seg Artist");
 		const req = buildRecordingSearch(s, "user query", "Global Artist");
-		expect(req).toEqual({ query: "user query", artist: "Seg Artist", type: "recording" });
+		expect(req).toEqual({ query: "user query", type: "recording" });
 	});
 
-	it("falls back to the segment title when the query is blank", () => {
+	it("falls back to the segment title when the query is blank (no artist hint)", () => {
 		const s = seg("s1", "Chapter Title", "Seg Artist");
 		const req = buildRecordingSearch(s, "   ", "Global Artist");
-		expect(req.query).toBe("Chapter Title");
-		expect(req.artist).toBe("Seg Artist");
-		expect(req.type).toBe("recording");
+		expect(req).toEqual({ query: "Chapter Title", type: "recording" });
 	});
 
-	it("falls back to the global artist when the segment artist is blank", () => {
-		const s = seg("s1", "Chapter Title", "");
+	it("omits artist even when a segment artist is set (channel name, not a real artist)", () => {
+		const s = seg("s1", "Chapter Title", "Seg Artist");
 		const req = buildRecordingSearch(s, "", "Global Artist");
 		expect(req.query).toBe("Chapter Title");
-		expect(req.artist).toBe("Global Artist");
+		expect(req.artist).toBeUndefined();
 	});
 
 	it("omits artist when neither segment nor global artist is set", () => {
@@ -202,20 +200,18 @@ describe("buildRecordingSearch (pure)", () => {
 });
 
 describe("buildReleaseSearch (pure)", () => {
-	it("uses album + artist inputs when provided", () => {
+	it("uses the album input; sends an album-only request (no artist hint)", () => {
 		const req = buildReleaseSearch("Dark Side", "Pink Floyd", "Global Album", "Global Artist");
-		expect(req).toEqual({ query: "Dark Side", artist: "Pink Floyd", type: "release" });
+		expect(req).toEqual({ query: "Dark Side", type: "release" });
 	});
 
-	it("falls back to global album / global artist when inputs are blank", () => {
+	it("falls back to the global album when the album input is blank (no artist hint)", () => {
 		const req = buildReleaseSearch("   ", "", "Global Album", "Global Artist");
-		expect(req.query).toBe("Global Album");
-		expect(req.artist).toBe("Global Artist");
-		expect(req.type).toBe("release");
+		expect(req).toEqual({ query: "Global Album", type: "release" });
 	});
 
-	it("omits artist when neither input nor global artist is set", () => {
-		const req = buildReleaseSearch("Some Album", "", "", "");
+	it("omits artist even when an artist input / global artist is set (channel name, not a real artist)", () => {
+		const req = buildReleaseSearch("Some Album", "Pink Floyd", "Global Album", "Global Artist");
 		expect(req.query).toBe("Some Album");
 		expect(req.artist).toBeUndefined();
 		expect(req.type).toBe("release");
