@@ -418,6 +418,37 @@ describe("library logic (pure)", () => {
 			expect(req).toEqual({ title: "T", artist: "A", album: "Al" });
 			expect("track" in req).toBe(false);
 		});
+
+		it("includes artUrl when the result has one", () => {
+			const r: MetadataResult = {
+				id: "m1",
+				type: "recording",
+				title: "T",
+				artist: "A",
+				score: 70,
+				artUrl: "https://coverartarchive.org/release/abc/front",
+			};
+			const items = trackSidebarItems(base, [r]);
+			const mbItem = items[1];
+			if (!mbItem) throw new Error("expected an MB item");
+			const req = toUpdateRequestFromItem(mbItem);
+			expect(req.artUrl).toBe("https://coverartarchive.org/release/abc/front");
+		});
+
+		it("omits artUrl when the result has none", () => {
+			const r: MetadataResult = {
+				id: "m1",
+				type: "recording",
+				title: "T",
+				artist: "A",
+				score: 70,
+			};
+			const items = trackSidebarItems(base, [r]);
+			const mbItem = items[1];
+			if (!mbItem) throw new Error("expected an MB item");
+			const req = toUpdateRequestFromItem(mbItem);
+			expect("artUrl" in req).toBe(false);
+		});
 	});
 
 	// ─── Match Album helpers (pure) ────────────────────────────────────────────

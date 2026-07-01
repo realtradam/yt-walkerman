@@ -265,6 +265,23 @@ describe("sidebarItems (pure)", () => {
 		expect(item.score).toBe(50);
 	});
 
+	it("toSidebarItem maps artUrl when the result has one", () => {
+		const r: MetadataResult = {
+			id: "m1",
+			type: "recording",
+			title: "T",
+			artist: "A",
+			score: 70,
+			artUrl: "https://coverartarchive.org/release/abc/front",
+		};
+		expect(toSidebarItem(r).artUrl).toBe("https://coverartarchive.org/release/abc/front");
+	});
+
+	it("toSidebarItem omits artUrl when the result has none", () => {
+		const r: MetadataResult = { id: "m1", type: "recording", title: "T", artist: "A", score: 70 };
+		expect(toSidebarItem(r).artUrl).toBeUndefined();
+	});
+
 	it("youtubeItem reflects the segment's current parsed fields", () => {
 		const item = youtubeItem(seg("s1", "Title", "Artist", "Album", 5));
 		expect(item).toEqual({
@@ -329,9 +346,49 @@ describe("fillActions (pure)", () => {
 		expect(actions.some((a) => a.type === "editSegmentTrackNumber")).toBe(false);
 	});
 
+	it("emits editSegmentAlbumArt when the result has artUrl", () => {
+		const r: MetadataResult = {
+			id: "m1",
+			type: "recording",
+			title: "T",
+			artist: "A",
+			score: 70,
+			artUrl: "https://coverartarchive.org/release/abc/front",
+		};
+		const actions = fillActions("s1", toSidebarItem(r));
+		expect(actions).toContainEqual({
+			type: "editSegmentAlbumArt",
+			segmentId: "s1",
+			albumArt: { kind: "url", url: "https://coverartarchive.org/release/abc/front" },
+		});
+	});
+
+	it("omits editSegmentAlbumArt when the result has no artUrl", () => {
+		const r: MetadataResult = { id: "m1", type: "recording", title: "T", artist: "A", score: 70 };
+		const actions = fillActions("s1", toSidebarItem(r));
+		expect(actions.some((a) => a.type === "editSegmentAlbumArt")).toBe(false);
+	});
+
 	it("fillFromResult matches fillActions(toSidebarItem)", () => {
 		const r = mbResult("m1", "T", "A", "Al", 2, 90);
 		expect(fillFromResult("s1", r)).toEqual(fillActions("s1", toSidebarItem(r)));
+	});
+
+	it("fillFromResult carries artUrl through to an editSegmentAlbumArt action", () => {
+		const r: MetadataResult = {
+			id: "m1",
+			type: "recording",
+			title: "T",
+			artist: "A",
+			score: 80,
+			artUrl: "https://coverartarchive.org/release/xyz/front",
+		};
+		expect(fillFromResult("s1", r)).toEqual(fillActions("s1", toSidebarItem(r)));
+		expect(fillFromResult("s1", r)).toContainEqual({
+			type: "editSegmentAlbumArt",
+			segmentId: "s1",
+			albumArt: { kind: "url", url: "https://coverartarchive.org/release/xyz/front" },
+		});
 	});
 });
 

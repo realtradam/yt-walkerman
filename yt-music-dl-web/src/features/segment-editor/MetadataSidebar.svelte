@@ -182,7 +182,17 @@
 							<span class="text-[10px] text-base-content/40">current</span>
 						{/if}
 					</div>
-					<p class="mt-1 truncate text-sm font-medium">{item.title || "(untitled)"}</p>
+					<div class="mt-1 flex items-center gap-1.5">
+						{#if item.artUrl}
+							<img
+								src={item.artUrl}
+								alt=""
+								class="h-5 w-5 shrink-0 rounded object-cover"
+								loading="lazy"
+							/>
+						{/if}
+						<p class="truncate text-sm font-medium">{item.title || "(untitled)"}</p>
+					</div>
 					<p class="truncate text-xs text-base-content/70">{item.artist}</p>
 					<p class="truncate text-xs text-base-content/50">
 						{#if item.album}{item.album}{:else}<span class="italic">no album</span>{/if}

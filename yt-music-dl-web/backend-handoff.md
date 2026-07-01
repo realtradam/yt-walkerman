@@ -89,6 +89,18 @@
     through the existing `onaction` channel as a batch of `EditAction`s — no
     new callback prop. Loading states shown throughout (MB is rate-limited to
     ~1 req/sec server-side; each search may take ~1s).
+   - **Phase 8 (album art):** the `MetadataResult.artUrl` (Cover Art Archive
+     front-cover URL) now flows through the sidebar view-model end-to-end.
+     `SidebarItem` gained `artUrl?: string`, mapped by `toSidebarItem`.
+     Click-to-fill (`fillActions`) emits an `editSegmentAlbumArt` action with a
+     url-kind `AlbumArtRef` when the selected result has `artUrl` — the
+     existing reducer already handles it (sets `segment.albumArt`). Both
+     sidebar components (`MetadataSidebar.svelte`,
+     `LibraryMetadataSidebar.svelte`) render a 20x20 thumbnail (`<img
+     src={item.artUrl} loading="lazy">`) next to result titles when `artUrl`
+     is present — visual confirmation before clicking. The library sidebar's
+     `toUpdateRequestFromItem` includes `artUrl` in the `UpdateTrackRequest`
+     PATCH body so the backend downloads + embeds the cover.
 
 ## Pinned contract version
 
@@ -116,6 +128,14 @@
   `/api/metadata/*` endpoints (search, release/:mbid, match-album) as
   specified, including the 502 `{ error }` error envelope (read by
   `metadataApi.ts`).
+- **Phase 8 consumed the backend's new optional `artUrl` fields verbatim**
+  (backend commit `6402a83`) — `MetadataResult.artUrl?: string` and
+  `UpdateTrackRequest.artUrl?: string`. No FE-side contract change was
+  required; the `file:` dep resolved the backend's latest `src/` directly.
+  The FE added `artUrl` to the `SidebarItem` view-model, the `fillActions`
+  click-to-fill (emits `editSegmentAlbumArt` with a url-kind `AlbumArtRef`),
+  the `toUpdateRequestFromItem` PATCH body, and thumbnail rendering in both
+  sidebar components.
 
 ## Open asks for the backend
 
@@ -189,6 +209,18 @@
   `searchState = reduceSearch(searchState, …)`). Match-album sends the CURRENT draft to the backend; because the dialog is modal (no edits
   occur mid-dialog), the backend's `segmentIndex` references stay aligned with
   the draft the FE applies against.
+- **Phase 8:** the `artUrl` is OPTIONAL on `MetadataResult` (a recording with no
+  releases has none), so every code path guards with `!== undefined` /
+  `{#if item.artUrl}`. The `SidebarItem` view-model carries `artUrl` alongside
+  the existing optional fields (`album`, `trackNumber`, `score`, `id`),
+  conditionally included (same `exactOptionalPropertyTypes` discipline). The
+  `editSegmentAlbumArt` action (and its reducer case) already existed — Phase 8
+  just emits it from `fillActions` for the first time. The thumbnail `<img>`
+  uses `loading="lazy"` so off-screen CAA images don't fire until scrolled into
+  view; the CAA URL returns a 307→JPEG, so a plain `<img src>` works with no
+  proxy. `updateTrack` (the optimistic local update) does NOT apply `artUrl` —
+  it is not a `Track` field; the backend handles it as a side-effect
+  (download + embed + re-tag + move) and returns the authoritative track.
 
 ## Likely next asks
 

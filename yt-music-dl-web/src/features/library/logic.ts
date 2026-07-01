@@ -234,9 +234,11 @@ export function trackSidebarItems(track: Track, results: MetadataResult[]): Side
  * Build a PATCH /api/library/:id body (UpdateTrackRequest) from a clicked
  * sidebar item. The "Current tags" entry (source: "youtube") produces an empty
  * body (no-op); an MB result sets title + artist always, album + track only
- * when the result actually carries them. Mirrors fillActions from metadata.ts
- * but produces an UpdateTrackRequest (a PATCH body) instead of EditAction[]
- * (in-memory draft edits). Pure: (item) → request.
+ * when the result actually carries them. When the result has a Cover Art
+ * Archive `artUrl`, it is included so the backend downloads + embeds the
+ * front cover. Mirrors fillActions from metadata.ts but produces an
+ * UpdateTrackRequest (a PATCH body) instead of EditAction[] (in-memory draft
+ * edits). Pure: (item) → request.
  */
 export function toUpdateRequestFromItem(item: SidebarItem): UpdateTrackRequest {
 	if (item.source === "youtube") return {}; // no-op — current tags
@@ -246,6 +248,7 @@ export function toUpdateRequestFromItem(item: SidebarItem): UpdateTrackRequest {
 	};
 	if (item.album !== undefined) req.album = item.album;
 	if (item.trackNumber !== undefined) req.track = item.trackNumber;
+	if (item.artUrl !== undefined) req.artUrl = item.artUrl;
 	return req;
 }
 

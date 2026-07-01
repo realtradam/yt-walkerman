@@ -137,6 +137,8 @@ export interface SidebarItem {
 	score?: number;
 	/** MusicBrainz MBID; absent for the YouTube entry. */
 	id?: string;
+	/** Cover Art Archive front-cover URL; absent when the result has none. */
+	artUrl?: string;
 }
 
 /** The "Generated from YouTube" entry: the segment's current parsed fields. Pure. */
@@ -163,6 +165,7 @@ export function toSidebarItem(result: MetadataResult): SidebarItem {
 	};
 	if (result.album !== undefined) item.album = result.album;
 	if (result.trackNumber !== undefined) item.trackNumber = result.trackNumber;
+	if (result.artUrl !== undefined) item.artUrl = result.artUrl;
 	return item;
 }
 
@@ -183,7 +186,9 @@ export function sidebarItems(segment: SegmentDraft, results: MetadataResult[]): 
  *   already mirrors the segment's current parsed values) → no edits.
  * - MusicBrainz result: sets title + artist always; album + trackNumber only
  *   when the result actually carries them (MB omits these from lightweight
- *   recording search entries).
+ *   recording search entries). When the result has a Cover Art Archive
+ *   `artUrl`, emits an `editSegmentAlbumArt` action with a url-kind
+ *   `AlbumArtRef` so the backend downloads + embeds the front cover.
  *
  * Pure: (segmentId, item) → actions. Dispatched by the component through
  * `onaction`; the composition root folds each over the pure `reduce`.
@@ -199,6 +204,13 @@ export function fillActions(segmentId: string, item: SidebarItem): EditAction[] 
 	}
 	if (item.trackNumber !== undefined) {
 		actions.push({ type: "editSegmentTrackNumber", segmentId, trackNumber: item.trackNumber });
+	}
+	if (item.artUrl !== undefined) {
+		actions.push({
+			type: "editSegmentAlbumArt",
+			segmentId,
+			albumArt: { kind: "url", url: item.artUrl },
+		});
 	}
 	return actions;
 }
