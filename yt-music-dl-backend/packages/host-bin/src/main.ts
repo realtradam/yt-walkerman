@@ -8,7 +8,9 @@
  *
  * Run: `bun --watch packages/host-bin/src/main.ts`  (or `bun run dev`)
  */
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type {
 	AudioFormat,
 	ConfirmDraftRequest,
@@ -114,6 +116,74 @@ function makeEmitter(jobId: JobId) {
 		storage.appendEvent(jobId, event);
 		broadcast(jobId, { type: "event", jobId, event });
 	};
+}
+
+// --- cover art (Cover Art Archive) ---
+
+let artCounter = 0;
+
+/**
+ * Download a cover-art image from a URL (typically a Cover Art Archive
+ * `…/release/<MBID>/front` URL, which 307-redirects to a JPEG) to a temp file.
+ *
+ * EFFECT: network fetch + fs write. Returns the temp file path on success, or
+ * `undefined` on any failure (network error, non-2xx, empty body) so callers can
+ * skip art embedding gracefully. The caller owns cleanup of the temp file.
+ *
+ * `fetch` follows redirects by default, so the CAA 307 → image-host hop is
+ * transparent. The temp filename uses a counter (process-unique) + the URL's
+ * content-type-derived extension (defaulting to `.jpg`).
+ */
+async function downloadCoverArt(url: string): Promise<string | undefined> {
+	try {
+		const res = await fetch(url);
+		if (!res.ok) {
+			console.warn(`[cover-art] fetch failed (${res.status}) for ${url}`);
+			return undefined;
+		}
+		const buf = await res.arrayBuffer();
+		if (buf.byteLength === 0) {
+			console.warn(`[cover-art] empty body for ${url}`);
+			return undefined;
+		}
+		const ext = mimeToExt(res.headers.get("content-type") ?? "");
+		artCounter++;
+		const path = join(tmpdir(), `ytmdl-art-${process.pid}-${artCounter}.${ext}`);
+		writeFileSync(path, Buffer.from(buf));
+		return path;
+	} catch (err) {
+		console.warn(`[cover-art] download failed for ${url}: ${String(err)}`);
+		return undefined;
+	}
+}
+
+/** Map a content-type to a file extension for cover art (default jpg). */
+function mimeToExt(mime: string): string {
+	const m = mime.toLowerCase().split(";")[0]?.trim();
+	if (m === "image/png") return "png";
+	if (m === "image/webp") return "webp";
+	return "jpg";
+}
+
+/** Remove a temp file if it exists; never throws (best-effort cleanup). */
+function cleanupTempFile(path: string | undefined): void {
+	if (!path) return;
+	try {
+		rmSync(path, { force: true });
+	} catch {
+		// best-effort
+	}
+}
+
+/** Resolve an AlbumArtRef of kind "url" to a downloaded temp file path. */
+async function resolveArtPath(
+	albumArt: import("@yt-music/contract").AlbumArtRef,
+): Promise<string | undefined> {
+	if (albumArt.kind === "url") {
+		return downloadCoverArt(albumArt.url);
+	}
+	// "video-thumbnail" and "uploaded" are not handled in this phase.
+	return undefined;
 }
 
 /** Single-track download (Phase 1): getInfo → download → organize → done. */
@@ -231,21 +301,34 @@ async function runSplitJob(
 	// failure for one file is logged but does not fail the whole job (the cut
 	// audio is still on disk). MP3 uses node-id3 (ID3v2); FLAC uses metaflac
 	// (Vorbis comments). Both are dispatched by createTagWriter → detectFormat.
+	// When a segment has a url-kind AlbumArtRef (Cover Art Archive), the art is
+	// downloaded to a temp file and passed as `artPath` so the tagger embeds a
+	// front-cover picture (APIC for MP3, PICTURE block for FLAC). Art download /
+	// embed failures are caught and skipped — the text tags still get written.
 	for (let i = 0; i < files.length; i++) {
 		const seg = cutPlan.segments[i];
 		if (!seg) continue;
+		const file = files[i] ?? "";
+		let artPath: string | undefined;
 		try {
-			await tagWriter.write(files[i] ?? "", {
+			artPath = await resolveArtPath(seg.albumArt);
+		} catch (err) {
+			console.warn(`[job ${jobId}] cover art download failed for ${file}: ${String(err)}`);
+		}
+		try {
+			await tagWriter.write(file, {
 				title: seg.title,
 				artist: seg.artist,
 				album: seg.album,
 				track: seg.trackNumber,
 				duration: 0,
 				format,
+				...(artPath ? { artPath } : {}),
 			});
 		} catch (err) {
-			console.warn(`[job ${jobId}] tag write failed for ${files[i]}: ${String(err)}`);
+			console.warn(`[job ${jobId}] tag write failed for ${file}: ${String(err)}`);
 		}
+		cleanupTempFile(artPath);
 	}
 
 	// Move each tagged file to its templated path (artist/album/track - title).
@@ -435,14 +518,28 @@ const server = Bun.serve({
 				return Response.json({ error: "invalid body" }, { status: 400 });
 			}
 			const settings = storage.getSettings();
+			// When artUrl is provided, download the cover art (Cover Art Archive
+			// → temp file) at the edge, then pass the path to the library which
+			// embeds it via the tagger. Download failures are skipped gracefully
+			// — the tag update proceeds without art.
+			let artPath: string | undefined;
+			if (body.artUrl) {
+				try {
+					artPath = await downloadCoverArt(body.artUrl);
+				} catch (err) {
+					console.warn(`[library] cover art download failed for ${id}: ${String(err)}`);
+				}
+			}
 			try {
-				const track = await library.renameTrack(id, body, settings);
+				const track = await library.renameTrack(id, body, settings, artPath);
 				const res: UpdateTrackResponse = { track };
 				return Response.json(res);
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
 				const status = message.includes("not found") ? 404 : 500;
 				return Response.json({ error: message }, { status });
+			} finally {
+				cleanupTempFile(artPath);
 			}
 		}
 

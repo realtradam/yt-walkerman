@@ -208,6 +208,9 @@ export interface UpdateTrackRequest {
 	artist?: string;
 	album?: string;
 	track?: number;
+	/** Cover Art Archive URL for the release's front cover. When set, the
+	 * backend downloads the image and embeds it as front-cover art. */
+	artUrl?: string;
 }
 
 /** PATCH /api/library/:id response — the updated track (new path + new id). */
@@ -246,6 +249,10 @@ export interface MetadataResult {
 	trackNumber?: number;
 	/** 0-100 relevance score from MusicBrainz. */
 	score: number;
+	/** Cover Art Archive URL for the release's front cover, when available.
+	 * Follows the CAA convention (307 redirect to a JPEG); the image is
+	 * fetched on demand by the backend when embedding art. */
+	artUrl?: string;
 }
 
 /** One track on a release (used inside ReleaseDetail). */

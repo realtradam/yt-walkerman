@@ -143,7 +143,7 @@ describe("buildId3Tags (pure)", () => {
 		expect(buildId3Tags(tags).trackNumber).toBeUndefined();
 	});
 
-	it("does not include non-text frames in phase 2", () => {
+	it("does not include non-text frames when artPath is absent", () => {
 		const tags = {
 			title: "T",
 			artist: "A",
@@ -154,7 +154,51 @@ describe("buildId3Tags (pure)", () => {
 		};
 		const id3 = buildId3Tags(tags);
 		expect(id3).not.toHaveProperty("APIC");
+		expect(id3).not.toHaveProperty("image");
 		expect(id3).not.toHaveProperty("duration");
+	});
+
+	it("sets image to the artPath when artPath is present", () => {
+		const tags = {
+			title: "T",
+			artist: "A",
+			album: "Al",
+			track: 0,
+			duration: 10,
+			format: "mp3" as const,
+			artPath: "/tmp/cover.jpg",
+		};
+		const id3 = buildId3Tags(tags);
+		expect(id3.image).toBe("/tmp/cover.jpg");
+	});
+
+	it("sets image alongside trackNumber when both are present", () => {
+		const tags = {
+			title: "T",
+			artist: "A",
+			album: "Al",
+			track: 5,
+			duration: 10,
+			format: "mp3" as const,
+			artPath: "/tmp/cover.png",
+		};
+		const id3 = buildId3Tags(tags);
+		expect(id3.trackNumber).toBe("5");
+		expect(id3.image).toBe("/tmp/cover.png");
+	});
+
+	it("omits image when artPath is an empty string", () => {
+		const tags = {
+			title: "T",
+			artist: "A",
+			album: "Al",
+			track: 0,
+			duration: 10,
+			format: "mp3" as const,
+			artPath: "",
+		};
+		const id3 = buildId3Tags(tags);
+		expect(id3.image).toBeUndefined();
 	});
 });
 
@@ -464,6 +508,115 @@ describe("createTagWriter (integration against real metaflac)", () => {
 		expect(read.album).toBe("MP3 Album");
 		expect(read.track).toBe(4);
 		expect(read.format).toBe("mp3");
+	});
+
+	it("embeds front-cover art (APIC) into an MP3 via artPath", async () => {
+		const path = join(workDir, "art.mp3");
+		const coverPath = join(workDir, "cover.jpg");
+		await execFile(FFMPEG, [
+			"-f",
+			"lavfi",
+			"-i",
+			"sine=frequency=440:duration=1",
+			"-c:a",
+			"libmp3lame",
+			"-y",
+			path,
+		]);
+		// A small valid JPEG (testsrc → 64x64 → mjpeg).
+		await execFile(FFMPEG, [
+			"-f",
+			"lavfi",
+			"-i",
+			"color=c=red:s=64x64:d=1",
+			"-frames:v",
+			"1",
+			"-q:v",
+			"2",
+			"-y",
+			coverPath,
+		]);
+
+		const writer = createTagWriter(METAFLAC);
+		await writer.write(path, {
+			title: "Art Title",
+			artist: "Art Artist",
+			album: "Art Album",
+			track: 1,
+			duration: 0,
+			format: "mp3",
+			artPath: coverPath,
+		});
+
+		// Verify the APIC frame was written by reading raw ID3 tags directly.
+		const NodeID3 = (await import("node-id3")).default;
+		const raw = NodeID3.read(path) as { image?: { imageBuffer?: Buffer; type?: { id: number } } };
+		expect(raw.image).toBeDefined();
+		expect(raw.image?.imageBuffer).toBeInstanceOf(Buffer);
+		expect(raw.image?.imageBuffer?.length).toBeGreaterThan(0);
+		// Picture type 3 = front cover.
+		expect(raw.image?.type?.id).toBe(3);
+	});
+
+	it("embeds front-cover art (PICTURE block) into a FLAC via artPath", async () => {
+		const path = join(workDir, "art.flac");
+		const coverPath = join(workDir, "cover.png");
+		await makeFlac(path);
+		// A small valid PNG.
+		await execFile(FFMPEG, [
+			"-f",
+			"lavfi",
+			"-i",
+			"color=c=blue:s=64x64:d=1",
+			"-frames:v",
+			"1",
+			"-y",
+			coverPath,
+		]);
+
+		const writer = createTagWriter(METAFLAC);
+		await writer.write(path, {
+			title: "Flac Art Title",
+			artist: "Flac Art Artist",
+			album: "Flac Art Album",
+			track: 2,
+			duration: 0,
+			format: "flac",
+			artPath: coverPath,
+		});
+
+		// metaflac --list shows the PICTURE block; verify it was written.
+		const { stdout } = await execFile(METAFLAC, ["--list", path]);
+		expect(stdout).toContain("PICTURE");
+		expect(stdout).toContain("type: 3"); // front cover
+	});
+
+	it("writes MP3 tags without art when artPath is absent (regression)", async () => {
+		const path = join(workDir, "noart.mp3");
+		await execFile(FFMPEG, [
+			"-f",
+			"lavfi",
+			"-i",
+			"sine=frequency=440:duration=1",
+			"-c:a",
+			"libmp3lame",
+			"-y",
+			path,
+		]);
+
+		const writer = createTagWriter(METAFLAC);
+		await writer.write(path, {
+			title: "No Art",
+			artist: "A",
+			album: "Al",
+			track: 1,
+			duration: 0,
+			format: "mp3",
+		});
+
+		const NodeID3 = (await import("node-id3")).default;
+		const raw = NodeID3.read(path) as { image?: unknown };
+		expect(raw.image).toBeUndefined();
 	});
 
 	it("throws a clear error for an unsupported format", async () => {

@@ -86,8 +86,17 @@ export interface Library {
 	 * Update a track's tags (only the provided fields) and move/rename the file
 	 * to match the path template. Returns the updated `Track` (new path + id).
 	 * Throws if the trackId is not found, or if no TagWriter was injected.
+	 *
+	 * `artPath` is an optional path to a downloaded cover-art temp file: when
+	 * set, it is embedded as a front-cover picture (the network download lives
+	 * at the host edge — the library does only fs via the injected writer).
 	 */
-	renameTrack(trackId: string, newTags: UpdateTrackRequest, settings: Settings): Promise<Track>;
+	renameTrack(
+		trackId: string,
+		newTags: UpdateTrackRequest,
+		settings: Settings,
+		artPath?: string,
+	): Promise<Track>;
 }
 
 /**
@@ -145,7 +154,12 @@ export function createLibrary(outputDir: string, reader: TagReader, writer?: Tag
 			return target;
 		},
 
-		async renameTrack(id: string, newTags: UpdateTrackRequest, settings: Settings): Promise<Track> {
+		async renameTrack(
+			id: string,
+			newTags: UpdateTrackRequest,
+			settings: Settings,
+			artPath?: string,
+		): Promise<Track> {
 			if (!writer) {
 				throw new Error("library: renameTrack requires a TagWriter (none was injected)");
 			}
@@ -166,6 +180,10 @@ export function createLibrary(outputDir: string, reader: TagReader, writer?: Tag
 				duration: current.duration,
 				format: current.format,
 			};
+			// Embed front-cover art when a downloaded image path was provided.
+			if (artPath) {
+				merged.artPath = artPath;
+			}
 			await writer.write(src, merged);
 
 			// Move the file to its templated location (uses the freshly-written

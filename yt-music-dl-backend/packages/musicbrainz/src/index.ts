@@ -159,13 +159,30 @@ function joinArtistCredit(ac: MbArtistCredit[] | undefined): string {
 	return out;
 }
 
+/** The base URL for Cover Art Archive front-cover redirects. */
+const COVER_ART_ARCHIVE_BASE = "https://coverartarchive.org/release";
+
+/**
+ * Build the Cover Art Archive front-cover URL for a release MBID.
+ *
+ * The URL follows the CAA convention: `GET /release/<MBID>/front` returns a
+ * 307 redirect to the actual JPEG. The image is fetched on demand by the
+ * backend (never by the pure parser).
+ *
+ * Pure: (mbid) → URL string.
+ */
+export function buildCoverArtUrl(mbid: string): string {
+	return `${COVER_ART_ARCHIVE_BASE}/${mbid}/front`;
+}
+
 /**
  * Parse a MusicBrainz recording-search JSON response into MetadataResult[].
  *
  * Each recording maps to a result with: id, type "recording", title, artist
- * (from artist-credit), album (first release's title, when present), and score.
- * trackNumber is not available in recording search results (the release detail
- * lookup is needed for track positions).
+ * (from artist-credit), album (first release's title, when present), score,
+ * and artUrl (Cover Art Archive URL built from the first release's MBID, when
+ * present). trackNumber is not available in recording search results (the
+ * release detail lookup is needed for track positions).
  *
  * Pure: (json) → MetadataResult[]. Robust to missing/malformed fields.
  */
@@ -187,6 +204,9 @@ export function parseRecordingSearch(json: unknown): MetadataResult[] {
 		if (firstRelease?.title) {
 			result.album = firstRelease.title;
 		}
+		if (firstRelease?.id) {
+			result.artUrl = buildCoverArtUrl(firstRelease.id);
+		}
 		out.push(result);
 	}
 	return out;
@@ -195,7 +215,8 @@ export function parseRecordingSearch(json: unknown): MetadataResult[] {
 /**
  * Parse a MusicBrainz release-search JSON response into MetadataResult[].
  *
- * Each release maps to a result with: id, type "release", title, artist, score.
+ * Each release maps to a result with: id, type "release", title, artist, score,
+ * and artUrl (Cover Art Archive URL built from the release's own MBID).
  * album/trackNumber are not applicable to releases.
  *
  * Pure: (json) → MetadataResult[].
@@ -213,6 +234,7 @@ export function parseReleaseSearch(json: unknown): MetadataResult[] {
 			title: rel.title,
 			artist: joinArtistCredit(rel["artist-credit"]),
 			score: typeof rel.score === "number" ? rel.score : 0,
+			artUrl: buildCoverArtUrl(rel.id),
 		});
 	}
 	return out;

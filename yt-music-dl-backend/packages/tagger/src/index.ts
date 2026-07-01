@@ -37,6 +37,12 @@ export interface Tags {
 	track: number;
 	duration: number;
 	format: AudioFormat;
+	/** Optional path to a JPEG/PNG file to embed as front-cover art. For FLAC
+	 * this becomes `--import-picture-from=<path>` (metaflac reads the file);
+	 * for MP3 this becomes the node-id3 `image` field (node-id3 reads the file,
+	 * auto-detects the MIME type, and defaults to front-cover type 3). When
+	 * omitted, no picture frame/block is written. */
+	artPath?: string;
 }
 
 /**
@@ -61,6 +67,10 @@ export interface Id3Tags {
 	album: string;
 	/** TRCK frame, e.g. "3". Only set when track > 0. */
 	trackNumber?: string;
+	/** APIC (attached picture) front-cover frame. A path to a JPEG/PNG file:
+	 * node-id3 reads the file itself, auto-detects the MIME type, and defaults
+	 * to picture type 3 (front cover). Only set when `Tags.artPath` is present. */
+	image?: string;
 }
 
 // ─── Pure core ───────────────────────────────────────────────────────────────
@@ -98,8 +108,9 @@ export function toTags(raw: RawMetadata, format: AudioFormat): Tags {
 /**
  * Map our `Tags` into the `node-id3` frame shape (ID3v2). Pure.
  * Text frames title/artist/album are always mapped; the TRCK (trackNumber)
- * frame is only set when track > 0. APIC (album art), year are added in later
- * phases.
+ * frame is only set when track > 0. APIC (album art) is set as a file path
+ * string when `tags.artPath` is present — node-id3 reads the file itself,
+ * auto-detects the MIME type, and defaults to picture type 3 (front cover).
  */
 export function buildId3Tags(tags: Tags): Id3Tags {
 	const id3: Id3Tags = {
@@ -109,6 +120,9 @@ export function buildId3Tags(tags: Tags): Id3Tags {
 	};
 	if (tags.track > 0) {
 		id3.trackNumber = String(tags.track);
+	}
+	if (tags.artPath) {
+		id3.image = tags.artPath;
 	}
 	return id3;
 }

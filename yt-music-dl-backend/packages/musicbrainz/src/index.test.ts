@@ -1,6 +1,7 @@
 import type { CutDraft, ReleaseDetail } from "@yt-music/contract";
 import { describe, expect, it } from "vitest";
 import {
+	buildCoverArtUrl,
 	buildRecordingSearchUrl,
 	buildReleaseLookupUrl,
 	buildReleaseSearchUrl,
@@ -256,6 +257,20 @@ describe("buildReleaseLookupUrl (pure)", () => {
 	});
 });
 
+// ─── buildCoverArtUrl (pure) ──────────────────────────────────────────────────
+
+describe("buildCoverArtUrl (pure)", () => {
+	it("builds the CAA front-cover URL for a release MBID", () => {
+		const mbid = "59211ea4-ffd2-4ad9-9a4e-941d3148024a";
+		expect(buildCoverArtUrl(mbid)).toBe(`https://coverartarchive.org/release/${mbid}/front`);
+	});
+
+	it("passes the MBID through verbatim (no encoding — MBIDs are URL-safe)", () => {
+		const mbid = "a1b2c3d4-0000-0000-0000-000000000002";
+		expect(buildCoverArtUrl(mbid)).toBe(`https://coverartarchive.org/release/${mbid}/front`);
+	});
+});
+
 // ─── parseRecordingSearch (pure) ─────────────────────────────────────────────
 
 describe("parseRecordingSearch (pure)", () => {
@@ -269,12 +284,20 @@ describe("parseRecordingSearch (pure)", () => {
 			artist: "倖田來未 feat. 東方神起",
 			album: "LAST ANGEL",
 			score: 100,
+			artUrl: "https://coverartarchive.org/release/c33dee6a/front",
 		});
 	});
 
 	it("takes the first release title as the album", () => {
 		const results = parseRecordingSearch(RECORDING_SEARCH_JSON);
 		expect(results[1]?.album).toBe("The Dark Side of the Moon");
+	});
+
+	it("builds artUrl from the first release's MBID", () => {
+		const results = parseRecordingSearch(RECORDING_SEARCH_JSON);
+		expect(results[0]?.artUrl).toBe("https://coverartarchive.org/release/c33dee6a/front");
+		// Second recording's first release id is "r1".
+		expect(results[1]?.artUrl).toBe("https://coverartarchive.org/release/r1/front");
 	});
 
 	it("maps type to 'recording'", () => {
@@ -292,6 +315,21 @@ describe("parseRecordingSearch (pure)", () => {
 		const json = { recordings: [{ id: "x", title: "T", "artist-credit": [] }] };
 		const results = parseRecordingSearch(json);
 		expect(results[0]?.album).toBeUndefined();
+	});
+
+	it("omits artUrl when the recording has no releases", () => {
+		const json = { recordings: [{ id: "x", title: "T", "artist-credit": [] }] };
+		const results = parseRecordingSearch(json);
+		expect(results[0]?.artUrl).toBeUndefined();
+	});
+
+	it("omits artUrl when the first release has no id", () => {
+		const json = {
+			recordings: [{ id: "x", title: "T", "artist-credit": [], releases: [{ title: "Al" }] }],
+		};
+		const results = parseRecordingSearch(json);
+		expect(results[0]?.album).toBe("Al");
+		expect(results[0]?.artUrl).toBeUndefined();
 	});
 
 	it("skips recordings missing id or title", () => {
@@ -321,6 +359,7 @@ describe("parseReleaseSearch (pure)", () => {
 			title: "æ³o & h³æ",
 			artist: "Autechre & The Hafler Trio",
 			score: 100,
+			artUrl: "https://coverartarchive.org/release/59211ea4-ffd2-4ad9-9a4e-941d3148024a/front",
 		});
 		expect(results[1]).toEqual({
 			id: "a1b2c3d4-0000-0000-0000-000000000002",
@@ -328,7 +367,15 @@ describe("parseReleaseSearch (pure)", () => {
 			title: "The Dark Side of the Moon",
 			artist: "Pink Floyd",
 			score: 91,
+			artUrl: "https://coverartarchive.org/release/a1b2c3d4-0000-0000-0000-000000000002/front",
 		});
+	});
+
+	it("builds artUrl from each release's own MBID", () => {
+		const results = parseReleaseSearch(RELEASE_SEARCH_JSON);
+		expect(results[0]?.artUrl).toBe(
+			"https://coverartarchive.org/release/59211ea4-ffd2-4ad9-9a4e-941d3148024a/front",
+		);
 	});
 
 	it("does not set album or trackNumber for releases", () => {

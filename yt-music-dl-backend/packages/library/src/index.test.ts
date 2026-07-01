@@ -226,4 +226,37 @@ describe("createLibrary shell", () => {
 			"TagWriter",
 		);
 	});
+
+	it("renameTrack embeds artPath into the written tags when provided", async () => {
+		const src = join(dir, "track.flac");
+		await writeFile(src, "fake");
+		store.set(src, { ...flacTags, title: "T", artist: "A", album: "Al", track: 1 });
+		const lib = createLibrary(dir, fakeReader(store), fakeWriter(store));
+
+		const updated = await lib.renameTrack(
+			trackId(src),
+			{ title: "T2" },
+			settings,
+			"/tmp/cover.jpg",
+		);
+
+		// The writer was called on the SOURCE path (before the move) with the
+		// merged tags carrying artPath.
+		const written = store.get(src);
+		expect(written?.artPath).toBe("/tmp/cover.jpg");
+		expect(written?.title).toBe("T2");
+		// The returned track reflects the new (moved) path.
+		expect(updated.path).not.toBe(src);
+	});
+
+	it("renameTrack writes no artPath when none is provided", async () => {
+		const src = join(dir, "track.flac");
+		await writeFile(src, "fake");
+		store.set(src, { ...flacTags, title: "T", artist: "A", album: "Al", track: 1 });
+		const lib = createLibrary(dir, fakeReader(store), fakeWriter(store));
+
+		const updated = await lib.renameTrack(trackId(src), { title: "T2" }, settings);
+		const written = store.get(updated.path);
+		expect(written?.artPath).toBeUndefined();
+	});
 });
